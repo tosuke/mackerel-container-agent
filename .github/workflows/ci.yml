@@ -40,6 +40,66 @@ jobs:
             go-
       - run: make test
 
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: docker/setup-qemu-action@v2
+      - uses: docker/setup-buildx-action@v2
+
+      - name: Build image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          target: container-agent
+          platforms: |
+            linux/amd64
+          outputs: |
+            type=oci,dest=agent-image.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build image with plugins
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          target: container-agent-with-plugins
+          platforms: |
+            linux/amd64
+          outputs: |
+            type=oci,dest=agent-plugins-image.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Untar
+        run: |
+          mkdir -p agent-image
+          mkdir -p agent-plugins-image
+          tar -xf agent-image.tar -C agent-image
+          tar -xf agent-plugins-image.tar -C agent-plugins-image
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: image
+          input: agent-image
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: 'CRITICAL,HIGH'
+      - name: Scan plugins image with Trivy
+        if: always()
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: image
+          input: agent-image
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: 'CRITICAL,HIGH'
+
   build-and-push-alpha:
     if: startsWith(github.head_ref, 'bump-version-')
     needs: [test]
